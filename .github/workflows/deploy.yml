@@ -52,7 +52,7 @@ jobs:
 
       # Установка kubectl для работы с кластером
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@v5
         with:
           version: 'latest'
 
