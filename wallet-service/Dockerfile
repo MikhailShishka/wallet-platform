@@ -26,7 +26,7 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # --------- Stage 2: RUNTIME ---------
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 # 5. Устанавливаем wget для healthcheck (Alpine минималистичный)
 RUN apk add --no-cache wget
