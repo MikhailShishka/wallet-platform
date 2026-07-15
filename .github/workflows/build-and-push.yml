@@ -50,7 +50,7 @@ jobs:
 
       # Docker Buildx — расширенный build с кэшированием
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Логин в GHCR через встроенный GITHUB_TOKEN
       # secrets.GITHUB_TOKEN — автоматический токен, всегда доступен
