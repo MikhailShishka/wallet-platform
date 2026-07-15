@@ -1,0 +1,92 @@
+# ============================================================
+# Dependabot — автоматическое создание PR с обновлениями:
+# - Maven-зависимостей во всех 4 сервисах
+# - Base Docker-образов в Dockerfile
+# - GitHub Actions версий
+#
+# Раз в неделю Dependabot проверяет и создаёт PR с апгрейдами.
+# CI автоматически прогоняется — если тесты прошли, можно мержить.
+# ============================================================
+
+version: 2
+updates:
+  # ---- Maven dependencies ----
+  - package-ecosystem: "maven"
+    directory: "/wallet-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "wallet-service"
+
+  - package-ecosystem: "maven"
+    directory: "/history-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "history-service"
+
+  - package-ecosystem: "maven"
+    directory: "/exchange-rate-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "exchange-rate-service"
+
+  - package-ecosystem: "maven"
+    directory: "/api-gateway"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "api-gateway"
+
+  # ---- Docker base images ----
+  - package-ecosystem: "docker"
+    directory: "/wallet-service"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "docker"
+      - "wallet-service"
+
+  - package-ecosystem: "docker"
+    directory: "/history-service"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "docker"
+      - "history-service"
+
+  - package-ecosystem: "docker"
+    directory: "/exchange-rate-service"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "docker"
+
+  - package-ecosystem: "docker"
+    directory: "/api-gateway"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "docker"
+
+  # ---- GitHub Actions ----
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "ci"

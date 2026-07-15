@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: history-service
+
+  # ----- MongoDB -----
+  data:
+    mongodb:
+      host: ${MONGO_HOST:localhost}
+      port: ${MONGO_PORT:27017}
+      database: wallet_history
+      # Автосоздание индексов при старте (по @Indexed аннотациям)
+      auto-index-creation: true
+
+  # ----- Kafka Consumer -----
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    consumer:
+      group-id: history-service
+      # Начинать читать с самого начала топика, если группа новая
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        # Разрешаем десериализацию любых типов из wallet-service
+        spring.json.trusted.packages: "com.wallet.history.dto,com.wallet.dto"
+        spring.json.use.type.headers: false
+        # Явно указываем целевой тип для JsonDeserializer
+        spring.json.value.default.type: com.wallet.history.dto.MoneyTransferredEvent
+      # Off — коммитим offset вручную после успешной обработки
+      enable-auto-commit: false
+    listener:
+      # MANUAL_IMMEDIATE — ack после успешной обработки в @KafkaListener
+      ack-mode: manual_immediate
+
+server:
+  port: 8081
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+# ----- Наши application-property -----
+history:
+  events:
+    money-transfers-topic: money-transfers
+
+logging:
+  level:
+    com.wallet.history: INFO

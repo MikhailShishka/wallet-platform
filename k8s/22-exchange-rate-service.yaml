@@ -1,0 +1,86 @@
+# ============================================================
+# exchange-rate-service — WebFlux + Reactive Mongo + SSE.
+# Реактивный, read-only сервис.
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: exchange-rate-service-config
+  namespace: wallet-platform
+data:
+  SPRING_DATA_MONGODB_URI: "mongodb://mongo:27017/exchange_rates"
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75"
+  OTEL_SERVICE_NAME: "exchange-rate-service"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+  OTEL_TRACES_SAMPLER: "always_on"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exchange-rate-service
+  namespace: wallet-platform
+  labels:
+    app: exchange-rate-service
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: exchange-rate-service
+  template:
+    metadata:
+      labels:
+        app: exchange-rate-service
+    spec:
+      containers:
+        - name: exchange-rate-service
+          image: exchange-rate-service:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+          envFrom:
+            - configMapRef:
+                name: exchange-rate-service-config
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "100m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8082
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8082
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: exchange-rate-service
+  namespace: wallet-platform
+spec:
+  selector:
+    app: exchange-rate-service
+  ports:
+    - port: 8082
+      targetPort: 8082

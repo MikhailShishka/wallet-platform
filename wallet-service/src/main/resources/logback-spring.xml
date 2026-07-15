@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Logback конфиг с trace_id и span_id в каждой строке.
+    OpenTelemetry javaagent автоматически кладёт их в MDC (Mapped Diagnostic Context).
+    Формат %X{trace_id:-} — если пусто, ставим прочерк.
+
+    Результат:
+    2025-11-15 10:00:00 INFO  [wallet-service] [trace_id=4bf92f3577b34da6a3ce929d0e0e4736 span_id=00f067aa0ba902b7] c.w.s.WalletOperationService - Deposit: walletId=...
+
+    По trace_id из логов можно найти этот запрос в Jaeger UI.
+    По trace_id из Jaeger — все логи со всех сервисов по этому запросу.
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [${spring.application.name:-app}] [trace_id=%X{trace_id:-} span_id=%X{span_id:-}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+
+    <logger name="com.wallet" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="WARN"/>
+</configuration>

@@ -1,0 +1,85 @@
+# ============================================================
+# Ingress — единственная точка входа снаружи.
+# Весь трафик из вне направляется на api-gateway.
+#
+# ⚠️ Требует установленного Ingress Controller в кластере
+# (nginx-ingress, Traefik, HAProxy).
+# В minikube: `minikube addons enable ingress`
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wallet-platform-ingress
+  namespace: wallet-platform
+  annotations:
+    # nginx-ingress-специфичные аннотации
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Увеличиваем таймауты для SSE (exchange-rate стримит курсы)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    # В prod: конкретный домен (api.wallet.example.com)
+    # Для dev: любой хост
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8000
+
+  # В prod: TLS через cert-manager
+  # tls:
+  #   - hosts:
+  #       - api.wallet.example.com
+  #     secretName: wallet-tls
+
+---
+# ============================================================
+# HorizontalPodAutoscaler для wallet-service — автоскейлинг под нагрузкой
+# ============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: wallet-service-hpa
+  namespace: wallet-platform
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: wallet-service
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    # Скейлим по CPU
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # И по памяти
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  # Поведение: не давать слишком часто скейлить
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300   # медленнее скейлимся вниз
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60

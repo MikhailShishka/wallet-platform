@@ -1,0 +1,111 @@
+# ============================================================
+# Build & Push Workflow — при push в main:
+# 1. Собирает Docker-образы всех 4 сервисов (параллельно).
+# 2. Пушит в GitHub Container Registry (ghcr.io).
+#
+# Теги:
+#   - ghcr.io/OWNER/SERVICE:latest
+#   - ghcr.io/OWNER/SERVICE:sha-<7-символов>   ← для точной идентификации
+#   - ghcr.io/OWNER/SERVICE:main                ← имя ветки
+#
+# BuildKit + cache для быстрой пересборки (5-30 сек вместо 5 минут).
+# ============================================================
+
+name: Build & Push Docker Images
+
+on:
+  push:
+    branches: [main]
+  # Позволить ручной запуск из UI
+  workflow_dispatch:
+
+env:
+  # GHCR: ghcr.io/OWNER
+  REGISTRY: ghcr.io
+  # github.repository_owner — владелец репо (username или org)
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  build-and-push:
+    name: Build & Push ${{ matrix.service }}
+    runs-on: ubuntu-latest
+
+    # permissions нужны для push в GHCR
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - wallet-service
+          - history-service
+          - exchange-rate-service
+          - api-gateway
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Docker Buildx — расширенный build с кэшированием
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Логин в GHCR через встроенный GITHUB_TOKEN
+      # secrets.GITHUB_TOKEN — автоматический токен, всегда доступен
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Извлечение метаданных — теги, labels
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch
+            type=sha,prefix=sha-,format=short
+
+      # Build + Push с кэшированием слоёв через BuildKit
+      # cache-from/to: GitHub Actions cache — слои переиспользуются
+      #   между запусками, ускорение 5-10x
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service }}
+          file: ./${{ matrix.service }}/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+          platforms: linux/amd64
+          # Для multi-arch (arm64 + amd64) добавить: linux/amd64,linux/arm64
+
+      # Опционально: scan образа на уязвимости через Trivy
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_PREFIX }}/${{ matrix.service }}:sha-${{ github.sha }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'   # не блокируем pipeline на CVE (informational)
+
+  # ==========================================================
+  # Итоговый job — единая точка успеха
+  # ==========================================================
+  images-ready:
+    name: All Images Pushed
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    steps:
+      - name: Summary
+        run: |
+          echo "All 4 images pushed to ${{ env.IMAGE_PREFIX }}"
+          echo "Tags: latest, sha-${{ github.sha }}"

@@ -1,0 +1,23 @@
+# Не копируем в build context — Docker daemon получит меньше данных
+target/
+.idea/
+.vscode/
+*.iml
+.git/
+.gitignore
+.mvn/wrapper/maven-wrapper.jar
+.env
+.env.*
+*.log
+
+# Тесты — не нужны для runtime (собираем без них)
+src/test/
+
+# Сгенерированное
+generated/
+build/
+out/
+
+# ОС-специфичное
+.DS_Store
+Thumbs.db

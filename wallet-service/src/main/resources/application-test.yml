@@ -1,0 +1,23 @@
+# ----- Test profile -----
+# Отключаем внешние зависимости, которых нет в тестах.
+
+spring:
+  cache:
+    type: none
+  # Kafka не поднимаем — тесты работают только с БД.
+  # Исключаем autoconfig, чтобы не искать bootstrap-servers.
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
+  # Отключаем Scheduling, чтобы OutboxRelay не мешал тестам БД
+  task:
+    scheduling:
+      pool:
+        size: 0
+
+# Очень большой delay относа — фактически отключает scheduled в тестах
+wallet:
+  outbox:
+    relay:
+      delay-ms: 3600000   # 1 час
+

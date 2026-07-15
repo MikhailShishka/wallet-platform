@@ -1,0 +1,127 @@
+# ============================================================
+# wallet-service — MVC + Postgres + Redis + Kafka + Resilience4j.
+# 2 реплики для availability, автоскейл настроим позже (HPA).
+# ============================================================
+
+# --- ConfigMap: обычные настройки ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wallet-service-config
+  namespace: wallet-platform
+data:
+  # Spring подхватит эти переменные автоматически (relaxed binding)
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/wallet"
+  SPRING_DATASOURCE_USERNAME: "wallet"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  EXCHANGE_RATE_URL: "http://exchange-rate-service:8082"
+  # JVM для контейнера
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75"
+  # OpenTelemetry — trace в Jaeger
+  OTEL_SERVICE_NAME: "wallet-service"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+  OTEL_TRACES_SAMPLER: "always_on"
+  OTEL_METRICS_EXPORTER: "none"
+  OTEL_LOGS_EXPORTER: "none"
+
+---
+# --- Secret: пароль БД + JWT ключ ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: wallet-service-secrets
+  namespace: wallet-platform
+type: Opaque
+stringData:
+  SPRING_DATASOURCE_PASSWORD: "secret"
+  # JWT secret — в проде через Vault / External Secrets
+  APP_JWT_SECRET: "change-me-in-production-super-secret-jwt-signing-key-256-bit"
+
+---
+# --- Deployment ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-service
+  namespace: wallet-platform
+  labels:
+    app: wallet-service
+spec:
+  # 2 реплики → нагрузка балансируется, при падении одного второй работает
+  replicas: 2
+  # Rolling update: заменяем поды по одному (maxSurge=1, maxUnavailable=0)
+  # → zero-downtime deployment
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: wallet-service
+  template:
+    metadata:
+      labels:
+        app: wallet-service
+    spec:
+      containers:
+        - name: wallet-service
+          # imagePullPolicy: IfNotPresent — использует локальный образ (для minikube)
+          # В prod: Always с конкретным тегом
+          image: wallet-service:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          # Загрузка всех переменных из ConfigMap и Secret
+          envFrom:
+            - configMapRef:
+                name: wallet-service-config
+            - secretRef:
+                name: wallet-service-secrets
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "200m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          # Startup probe — даём Spring Boot спокойно стартовать
+          # (по умолчанию сначала liveness, что может убить недостартовавшее приложение)
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            failureThreshold: 30    # 30 * 5s = 150s на старт
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            periodSeconds: 10
+            failureThreshold: 3
+
+---
+# --- Service ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wallet-service
+  namespace: wallet-platform
+spec:
+  selector:
+    app: wallet-service
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
+  # ClusterIP по умолчанию — доступ только внутри кластера

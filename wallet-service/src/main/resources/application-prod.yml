@@ -1,0 +1,38 @@
+# ----- Production profile -----
+# ВСЕ секреты — только через переменные окружения.
+# Никаких default'ов на пароли/секреты!
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}         # без дефолта — обязательно
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false                        # никаких SQL в проде — раздувает логи
+
+jwt:
+  secret: ${JWT_SECRET}                    # обязательно из env
+  expiration: ${JWT_EXPIRATION:900000}     # 15 минут в проде (короткий срок)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus    # metrics не светим — только prometheus scrape
+  endpoint:
+    health:
+      show-details: never                  # без деталей — не раскрываем БД версию и т.п.
+  # Actuator на отдельном порту (доступ только из внутренней сети / Prometheus)
+  server:
+    port: 9090
+
+server:
+  port: 8080
+
+logging:
+  level:
+    root: WARN
+    com.wallet: INFO

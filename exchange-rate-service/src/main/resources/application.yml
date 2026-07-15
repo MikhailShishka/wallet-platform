@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: exchange-rate-service
+
+  # ----- Reactive MongoDB -----
+  data:
+    mongodb:
+      host: ${MONGO_HOST:localhost}
+      port: ${MONGO_PORT:27017}
+      database: exchange_rates
+      auto-index-creation: true
+
+server:
+  port: 8082
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# ----- Наши application-property -----
+rates:
+  # Пары, которые симулятор двигает.
+  # Формат: BASE-QUOTE, например USD-EUR (1 USD = X EUR).
+  pairs:
+    - USD-EUR
+    - USD-RUB
+    - EUR-RUB
+    - USD-GBP
+  # Стартовые значения курсов
+  seed:
+    USD-EUR: 0.92
+    USD-RUB: 92.5
+    EUR-RUB: 100.3
+    USD-GBP: 0.79
+  # Частота симуляции колебаний
+  simulator:
+    interval-ms: 5000
+    volatility: 0.005  # +/- 0.5% на каждый тик
+
+logging:
+  level:
+    com.wallet.rates: INFO
+    reactor: WARN

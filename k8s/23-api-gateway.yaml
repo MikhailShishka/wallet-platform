@@ -1,0 +1,101 @@
+# ============================================================
+# api-gateway — Spring Cloud Gateway на WebFlux.
+# Единая точка входа. Ingress направляет весь внешний трафик сюда.
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+  namespace: wallet-platform
+data:
+  WALLET_SERVICE_URL: "http://wallet-service:8080"
+  HISTORY_SERVICE_URL: "http://history-service:8081"
+  EXCHANGE_RATE_SERVICE_URL: "http://exchange-rate-service:8082"
+  JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75"
+  OTEL_SERVICE_NAME: "api-gateway"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+  OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+  OTEL_TRACES_SAMPLER: "always_on"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-gateway-secrets
+  namespace: wallet-platform
+type: Opaque
+stringData:
+  # Тот же JWT secret, что у wallet-service — Gateway валидирует токены
+  APP_JWT_SECRET: "change-me-in-production-super-secret-jwt-signing-key-256-bit"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: wallet-platform
+  labels:
+    app: api-gateway
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+        - name: api-gateway
+          image: api-gateway:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: api-gateway-config
+            - secretRef:
+                name: api-gateway-secrets
+          resources:
+            requests:
+              memory: "384Mi"
+              cpu: "150m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8000
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8000
+            periodSeconds: 10
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  namespace: wallet-platform
+spec:
+  selector:
+    app: api-gateway
+  ports:
+    - port: 8000
+      targetPort: 8000

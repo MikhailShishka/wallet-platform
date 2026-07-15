@@ -1,0 +1,140 @@
+spring:
+  application:
+    name: wallet-service
+
+  # Явно фиксируем сервлетный стек (MVC), т.к. в classpath есть spring-webflux
+  # (нужен для WebClient), но приложение это MVC + JPA.
+  main:
+    web-application-type: servlet
+
+  # ----- БД (PostgreSQL) -----
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/wallet}
+    username: ${SPRING_DATASOURCE_USERNAME:wallet}
+    password: ${SPRING_DATASOURCE_PASSWORD:secret}
+
+  # ----- JPA / Hibernate -----
+  jpa:
+    hibernate:
+      ddl-auto: validate          # схему создаёт Flyway
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+    show-sql: false
+
+  # ----- Flyway -----
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  # ----- Redis (cache) -----
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2s
+
+  cache:
+    type: redis
+
+  # ----- Kafka (Producer в outbox-relay) -----
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      # acks=all → producer ждёт подтверждения от всех реплик → максимум надёжности.
+      # Замедляет запись, но для событий переводов это ок.
+      acks: all
+      # retries + idempotence → не будет дубликатов при retry
+      retries: 3
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        # Спецификатор типа не отправляем (потребитель может быть на другом языке)
+        spring.json.add.type.headers: false
+
+# ----- Наши application-property -----
+wallet:
+  events:
+    money-transfers-topic: money-transfers
+  # URL exchange-rate-service (в проде — через K8s DNS или ConfigMap)
+  exchange-rate:
+    base-url: ${EXCHANGE_RATE_URL:http://localhost:8082}
+
+# ----- Resilience4j: защита исходящих HTTP-вызовов -----
+resilience4j:
+  circuitbreaker:
+    instances:
+      exchange-rate:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2s
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        register-health-indicator: true
+
+  retry:
+    instances:
+      exchange-rate:
+        max-attempts: 3
+        wait-duration: 100ms
+        exponential-backoff-multiplier: 2   # 100ms, 200ms, 400ms
+        # Ретраим на явных «сетевых» сбоях, но не на 4xx-ответах
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - org.springframework.web.reactive.function.client.WebClientRequestException
+
+  timelimiter:
+    instances:
+      exchange-rate:
+        timeout-duration: 3s
+        cancel-running-future: true
+
+# ----- JWT -----
+jwt:
+  secret: ${JWT_SECRET:dev-secret-must-be-at-least-32-bytes-long-CHANGE-IN-PROD}
+  expiration: 3600000             # 1 час
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+# ----- Actuator + Observability -----
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,retries
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true             # /actuator/health/liveness и /readiness
+      group:
+        readiness:
+          include: readinessState,db  # readiness падает, если БД недоступна
+  info:
+    env:
+      enabled: true               # включает info.* поля из yml
+
+info:
+  app:
+    name: ${spring.application.name}
+    description: Electronic wallet core service
+    version: 0.1.0
+
+# ----- Логирование -----
+logging:
+  level:
+    com.wallet: INFO
+    org.hibernate.SQL: WARN

@@ -1,0 +1,107 @@
+# ============================================================
+# Deploy Workflow — деплой в Kubernetes.
+#
+# ⚠️ ЗАГЛУШКА для обучения — на реальном проде требует:
+# 1. Настройки kubeconfig как GitHub Secret (KUBE_CONFIG).
+# 2. Доступа runner'а к K8s-кластеру (VPN/private endpoint).
+# 3. Обычно триггерится вручную или после успешного build-and-push.
+#
+# Альтернатива — GitOps: ArgoCD/Flux следит за git-репо с манифестами
+# и деплоит сам. CI не касается кластера напрямую.
+# ============================================================
+
+name: Deploy to Kubernetes
+
+on:
+  # Триггер после успешной сборки образов
+  workflow_run:
+    workflows: ["Build & Push Docker Images"]
+    types: [completed]
+    branches: [main]
+  # Ручной запуск с выбором окружения
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      image_tag:
+        description: 'Image tag to deploy (e.g. sha-abc1234)'
+        required: true
+        default: 'latest'
+
+jobs:
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || 'dev' }}
+    runs-on: ubuntu-latest
+    # Только если build прошёл успешно
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    # Environment protection rules → защита prod через required reviewers
+    # Настраивается в Settings → Environments в GitHub
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Установка kubectl для работы с кластером
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      # Kubeconfig передаётся через Secret
+      # Создаётся заранее в Settings → Secrets → KUBE_CONFIG
+      # Значение: base64-encoded ~/.kube/config
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+        # Пропускаем если нет секрета (для обучения)
+        if: ${{ secrets.KUBE_CONFIG != '' }}
+
+      # Обновляем tag образов в манифестах на новый git SHA
+      # В prod через Kustomize или Helm — это упрощённая версия
+      - name: Update image tags in manifests
+        env:
+          IMAGE_TAG: ${{ github.event.inputs.image_tag || format('sha-{0}', github.sha) }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          # Заменяем image: SERVICE:1.0 на image: ghcr.io/OWNER/SERVICE:TAG
+          for svc in wallet-service history-service exchange-rate-service api-gateway; do
+            sed -i "s|image: ${svc}:1.0|image: ${REGISTRY}/${svc}:${IMAGE_TAG}|g" k8s/*.yaml
+          done
+          echo "Updated to image tag: ${IMAGE_TAG}"
+
+      # Deploy
+      - name: Deploy to Kubernetes
+        run: |
+          # В реальности:
+          #   kubectl apply -f k8s/ --wait=true --timeout=5m
+          # или с Helm:
+          #   helm upgrade --install wallet-platform ./helm-chart \
+          #     --set global.imageTag=${IMAGE_TAG} \
+          #     --wait --timeout=5m
+          echo "kubectl apply -f k8s/  # заглушка для обучения"
+
+      # Smoke test — базовая проверка после деплоя
+      - name: Smoke test
+        run: |
+          # kubectl get pods -n wallet-platform
+          # kubectl rollout status deployment/wallet-service -n wallet-platform
+          # curl -f http://api-gateway/actuator/health
+          echo "Smoke test placeholder"
+
+      # Rollback при упавшем smoke test
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          # kubectl rollout undo deployment/wallet-service -n wallet-platform
+          echo "Rollback placeholder"
