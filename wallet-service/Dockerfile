@@ -8,7 +8,7 @@
 # ============================================================
 
 # --------- Stage 1: BUILDER ---------
-FROM maven:3.9-eclipse-temurin-21 AS builder
+FROM maven:3-eclipse-temurin-24 AS builder
 
 WORKDIR /build
 
